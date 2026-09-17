@@ -20,6 +20,23 @@ def _last_user(messages) -> str:
     return ""
 
 
+def _normalize_deployment(raw: str | None) -> str | None:
+    """Defensive normalization to canonical CN-A/CN-B labels, in case the LLM extraction
+    doesn't follow the schema description verbatim (e.g. echoes 'bare-metal' from the
+    user's own words). CN-B and CN-A are distinct implementations — never let 'bare metal'
+    wording alone imply CN-A's Ironic-based OpenStack bare-metal host provisioning."""
+    if not raw:
+        return None
+    low = raw.lower()
+    if "sriov" in low or "sr-iov" in low:
+        return "CN-A-SRIOV"
+    if "cn-b" in low or "cnb" in low or "bare" in low:
+        return "CN-B"
+    if "cn-a" in low or "cna" in low or "openstack" in low or "cbis" in low or "virtual" in low:
+        return "CN-A"
+    return raw
+
+
 def router(state: dict) -> dict:
     """Resolve version, classify, extract env facts, and judge sufficiency."""
     versions = available_versions()
@@ -41,7 +58,7 @@ def router(state: dict) -> dict:
     return {"version": version, "issue_type": d.issue_type,
             "symptoms": d.symptoms or _last_user(state["messages"]),
             "cve_ids": d.cve_ids, "node_roles": d.node_roles,
-            "deployment": d.deployment, "phase": d.phase,
+            "deployment": _normalize_deployment(d.deployment), "phase": d.phase,
             "enough_context": bool(d.enough_context) or already,
             "clarifying_questions": [q.model_dump() for q in d.clarifying_questions],
             "pending_questions": []}  # cleared on every routing turn
@@ -50,9 +67,14 @@ def router(state: dict) -> dict:
 def ask_version(state: dict) -> dict:
     versions = available_versions()
     opts = ", ".join(versions) if versions else "(none ingested yet)"
-    return {"messages": [AIMessage(content=(
+    question = (
         "Which NCS version are you running? I tailor every answer to the version, and the "
-        f"knowledge base currently covers: {opts}."))]}
+        f"knowledge base currently covers: {opts}.")
+    if not versions:
+        return {"messages": [AIMessage(content=question)]}
+    return {"messages": [AIMessage(content=question)], "pending_questions": [
+        {"key": "version", "question": question, "options": versions, "multi": False,
+         "widget": "radio"}]}
 
 
 _DEFAULT_QUESTIONS = [
@@ -60,7 +82,7 @@ _DEFAULT_QUESTIONS = [
      "options": ["controller/master", "worker", "edge", "storage", "deployer / NCS Manager",
                  "central management", "not sure"]},
     {"key": "deployment", "question": "What is the deployment flavor?", "multi": False,
-     "options": ["BareMetal", "OpenStack / CBIS", "OpenStack SR-IOV", "not sure"]},
+     "options": ["CN-B (BareMetal)", "CN-A (Virtualized/OpenStack)", "CN-A SR-IOV", "not sure"]},
     {"key": "phase", "question": "When did it happen?", "multi": False,
      "options": ["install / deploy", "upgrade", "scale / heal", "day-2 operation", "not sure"]},
     {"key": "error", "question": "What is the exact error, alarm code, or observed behaviour?",
@@ -130,7 +152,19 @@ def synthesize(state: dict) -> dict:
         "4. If the sources don't establish a cause, say so plainly and list what to collect "
         "(exact error text, /opt/bcmt/log entries, service/pod state) — do NOT manufacture "
         "causes or cite unrelated tickets to look thorough.\n"
-        "5. Never invent commands, file paths, or facts not in the sources or NCS_BRIEF.\n\n"
+        "5. Never invent commands, file paths, or facts not in the sources or NCS_BRIEF.\n"
+        "6. CN-B (BareMetal) and CN-A (Virtualized, runs on Nokia CBIS or vanilla "
+        "OpenStack) are DISTINCT implementations. If the environment's deployment is "
+        "CN-B, you MUST ignore/exclude any source whose content is about OpenStack "
+        "tooling (`openstack ...` CLI, Ironic, Ironic states like wait-call-back/deploy-"
+        "failed, CBIS, Deployer VM, OpenTofu/CLCM) — that is CN-A's infrastructure layer, "
+        "never CN-B's, even if the source also uses the words 'bare metal' (CN-A's own "
+        "compute hosts are physical too). BMC/IPMI/BIOS-boot-order troubleshooting IS "
+        "valid for CN-B — just via NCS Manager/direct BMC, never via `openstack "
+        "baremetal`/Ironic. Symmetrically, if the deployment is CN-A, do not apply NCS-"
+        "Manager-only (CN-B) procedures. If no source matches the stated flavor, say so "
+        "and ask for flavor-specific documentation rather than borrowing the other "
+        "flavor's steps.\n\n"
         f"SOURCES:\n{ctx}"))
     ans = get_llm().invoke([sys, *state["messages"]])
     return {"messages": [ans]}

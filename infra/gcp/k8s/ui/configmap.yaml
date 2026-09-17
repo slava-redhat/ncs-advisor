@@ -10,9 +10,9 @@ data:
   # your project. Avoid the dollar-sign character anywhere in this file —
   # gke.py renders manifests through string.Template.substitute, which treats
   # it as a variable placeholder.
-  ANTHROPIC_VERTEX_PROJECT_ID: "itpc-XXXXXXXX"
-  NCS_VERTEX_LOCATION: "us-east5"
-  NCS_LLM_MODEL: "claude-sonnet-4-5@20250929"
+  ANTHROPIC_VERTEX_PROJECT_ID: "itpc-ca-afcfbc9b8c"
+  NCS_VERTEX_LOCATION: "global"
+  NCS_LLM_MODEL: "claude-haiku-4-5@20251001"
   OLLAMA_EMBED_MODEL: "nomic-embed-text"
   OLLAMA_HOST: "http://ollama:11434"
   PGHOST: "postgres"

@@ -79,17 +79,31 @@ cp .env.example .env
 export GCP_PROJECT_ID="your-project"
 ```
 
-## How the ui reaches Vertex: Workload Identity
+## How the ui reaches Vertex: ADC Secret (matches OpenShift)
 
-On GKE the `ui` obtains Claude-on-Vertex credentials through **Workload
-Identity** — the `ncs` Kubernetes ServiceAccount is annotated with a Google SA,
-and the pod pulls short-lived tokens from the GKE metadata server. **No ADC key
-file is mounted in the cluster.** (On OpenShift, which has no Workload Identity,
-the `ui` instead mounts an `application_default_credentials.json` Secret — see
-`infra/ocp/README.md`.)
+The `ui` obtains Claude-on-Vertex credentials from an
+`application_default_credentials.json` file mounted from the
+`ncs-google-credentials` Secret — the same mechanism `infra/ocp` uses, since
+OpenShift has no Workload Identity. Place your working ADC file (e.g. copied
+from `~/.config/gcloud/application_default_credentials.json`, or from another
+project already granted Vertex/Model Garden access) at the repo root as
+`.application_default_credentials.json` (gitignored). `deploy` and
+`sync-secrets` both push it into `ncs-google-credentials` via
+`sync_google_credentials()`; the mount is `optional`, so the pod still starts
+without it (Vertex calls fail until the Secret is provided).
 
-`provision` creates the cluster with `--workload-pool`. Create the Google SA and
-the KSA↔GSA IAM binding once (replace `PROJECT_ID`):
+This was switched from GKE **Workload Identity** (binding the `ncs` KSA to a
+Google SA via the metadata server) because that path additionally requires the
+bound GSA to have its own Model Garden access grant for each Claude model,
+which is a separate approval step per project and may not be available. The
+cluster is still provisioned with `--workload-pool` and the `ncs` KSA is still
+annotated with `GSA_EMAIL` (see below) as an optional fallback/for other GCP
+API calls, but the `ui` container's `GOOGLE_APPLICATION_CREDENTIALS` env var
+points at the mounted ADC file, which takes precedence.
+
+If you do want to use Workload Identity instead (e.g. once the GSA has Model
+Garden access granted), create the Google SA and the KSA↔GSA IAM binding once
+(replace `PROJECT_ID`), and omit `.application_default_credentials.json`:
 
 ```bash
 gcloud iam service-accounts create ncs-vertex \

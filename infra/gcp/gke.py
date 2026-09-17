@@ -233,8 +233,30 @@ def sync_secret(config: Config) -> None:
     kubectl(config, ["apply", "-f", "-"], input_text=secret)
 
 
+def sync_google_credentials(config: Config) -> None:
+    """Mount the Vertex ADC into the ui as the ncs-google-credentials Secret.
+    Workload Identity requires per-GSA Model Garden access that may not be
+    granted; this ADC user credential (matching the OpenShift deployment) is
+    used instead. If .application_default_credentials.json is absent, this is
+    skipped — the ui Deployment mounts the secret as `optional`, so the pod
+    still starts (Vertex calls will fail until it is provided)."""
+    credentials_file = ROOT / ".application_default_credentials.json"
+    if not credentials_file.is_file():
+        print("No .application_default_credentials.json found; skipping "
+              "(the ui google-credentials mount is optional).")
+        return
+    credentials = command([
+        "kubectl", "-n", config.namespace, "create", "secret", "generic",
+        "ncs-google-credentials",
+        f"--from-file=application_default_credentials.json={credentials_file}",
+        "--dry-run=client", "-o", "yaml",
+    ], capture=True)
+    kubectl(config, ["apply", "-f", "-"], input_text=credentials)
+
+
 def create_secret_and_schema(config: Config) -> None:
     sync_secret(config)
+    sync_google_credentials(config)
     schema = command([
         "kubectl", "-n", config.namespace, "create", "configmap", "ncs-postgres-init",
         f"--from-file=schema.sql={ROOT / 'db' / 'schema.sql'}",
@@ -292,6 +314,7 @@ def sync_deployment_secrets(config: Config) -> None:
     require_tools("gcloud", "kubectl")
     cluster_credentials(config)
     sync_secret(config)
+    sync_google_credentials(config)
     kubectl(config, ["rollout", "restart", "deployment/ui"])
     kubectl(config, ["rollout", "status", "deployment/ui", "--timeout=180s"])
 

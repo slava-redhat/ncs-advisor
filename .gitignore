@@ -6,3 +6,4 @@ data/**/pdfs/*.pdf
 data/**/solutions/*.pdf
 data/**/solutions/*.csv
 !**/.gitkeep
+infra/**/backups/*.sql.gz

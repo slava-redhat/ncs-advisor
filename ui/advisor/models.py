@@ -36,7 +36,13 @@ class RouterDecision(BaseModel):
         default_factory=list, description="Affected NCS node roles the user named "
         "(e.g. deployer, controller, manager, worker, storage, edge).")
     deployment: str | None = Field(
-        None, description="Deployment flavor if stated: bare-metal | openstack | sriov-vm.")
+        None, description="Deployment flavor if stated, normalized to one of: "
+        "'CN-B' (BareMetal, deployed via NCS Manager, no OpenStack anywhere in the stack) | "
+        "'CN-A' (Virtualized, runs on Nokia CBIS or vanilla/generic OpenStack, via a "
+        "Deployer VM) | 'CN-A-SRIOV' (CN-A variant with SR-IOV/DPDK passthrough). CN-B and "
+        "CN-A are distinct implementations — never infer CN-A from CN-B or vice versa just "
+        "because both involve physical/bare-metal hardware somewhere (OpenStack's own "
+        "Ironic bare-metal host provisioning is part of CN-A, not CN-B).")
     phase: str | None = Field(
         None, description="Lifecycle phase when it happened if stated: "
         "install | upgrade | operation.")

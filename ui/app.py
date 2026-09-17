@@ -89,6 +89,9 @@ def render_form(questions):
             if not opts:
                 val = st.text_input(label, key=f"f_{key}", placeholder="Type here…")
                 parts = [val] if val else []
+            elif q.get("widget") == "radio":
+                sel = st.radio(label, opts, key=f"f_{key}", index=None)
+                parts = [sel] if sel else []
             elif q.get("multi"):
                 parts = list(st.pills(label, opts, selection_mode="multi", key=f"f_{key}"))
             else:

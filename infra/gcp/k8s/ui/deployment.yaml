@@ -13,8 +13,6 @@ spec:
       labels:
         app: ui
     spec:
-      # KSA annotated for Workload Identity — the ui reaches Claude-on-Vertex
-      # via the bound Google SA, no ADC key file in the cluster.
       serviceAccountName: ncs
       securityContext:
         runAsNonRoot: true
@@ -36,6 +34,16 @@ spec:
             # Streamlit needs a writable $$HOME under runAsNonRoot.
             - name: HOME
               value: /tmp
+            # Vertex ADC key file — mounted from the ncs-google-credentials
+            # Secret. Workload Identity requires per-GSA Model Garden access
+            # that may not be granted; the ADC user credential is used
+            # instead, matching the OpenShift deployment.
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /gcloud/application_default_credentials.json
+          volumeMounts:
+            - name: google-credentials
+              mountPath: /gcloud
+              readOnly: true
           resources:
             requests:
               cpu: ${UI_CPU_REQUEST}
@@ -55,3 +63,9 @@ spec:
               port: 8501
             initialDelaySeconds: 30
             periodSeconds: 15
+      volumes:
+        # Created by gke.py from .application_default_credentials.json.
+        - name: google-credentials
+          secret:
+            secretName: ncs-google-credentials
+            optional: true
