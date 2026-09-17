@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+  namespace: ${NAMESPACE}
+  annotations:
+    # OpenShift image-trigger: redeploy automatically whenever a new image is
+    # pushed to the ui:${TAG} ImageStreamTag (e.g. after `oc start-build ui`).
+    image.openshift.io/triggers: |
+      [{"from":{"kind":"ImageStreamTag","name":"ui:${TAG}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"ui\")].image","paused":false}]
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui
+  template:
+    metadata:
+      labels:
+        app: ui
+    spec:
+      serviceAccountName: ncs
+      # No fixed runAsUser/fsGroup: OpenShift's "restricted" SCC assigns an
+      # arbitrary non-root UID from the project's allocated range.
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: ui
+          # Placeholder pullspec; the image.openshift.io/triggers annotation
+          # above rewrites this to the real internal-registry ref after build.
+          image: image-registry.openshift-image-registry.svc:5000/${NAMESPACE}/ui:${TAG}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8501
+          envFrom:
+            - configMapRef:
+                name: ncs-config
+            - secretRef:
+                name: ncs-secrets
+          env:
+            # ui/Dockerfile declares no non-root USER, so under OpenShift's
+            # arbitrary assigned UID there is no $$HOME; Streamlit needs a
+            # writable one for its runtime state.
+            - name: HOME
+              value: /tmp
+            # Vertex ADC key file — mounted from the ncs-google-credentials
+            # Secret (OpenShift has no Workload Identity).
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /gcloud/application_default_credentials.json
+          volumeMounts:
+            - name: google-credentials
+              mountPath: /gcloud
+              readOnly: true
+          resources:
+            requests:
+              cpu: ${UI_CPU_REQUEST}
+              memory: ${UI_MEMORY_REQUEST}
+            limits:
+              cpu: ${UI_CPU_LIMIT}
+              memory: ${UI_MEMORY_LIMIT}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 15
+      volumes:
+        # Created by openshift.py from .application_default_credentials.json.
+        - name: google-credentials
+          secret:
+            secretName: ncs-google-credentials
+            optional: true

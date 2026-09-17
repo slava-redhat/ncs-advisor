@@ -1,0 +1,4 @@
+# Local dev / self-checks. Containers install ui/requirements.txt + ingest/requirements.txt.
+-r ui/requirements.txt
+pypdf>=4.2
+langchain-text-splitters>=0.3

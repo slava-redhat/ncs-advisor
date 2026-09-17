@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ncs-config
+  namespace: ${NAMESPACE}
+data:
+  # Non-secret runtime env for the ui (which runs the LangGraph in-process).
+  # The Postgres password lives in the ncs-secrets Secret; the Vertex ADC is
+  # mounted from the ncs-google-credentials Secret (OpenShift has no Workload
+  # Identity). Edit ANTHROPIC_VERTEX_PROJECT_ID for your project. Avoid the
+  # dollar-sign character anywhere in this file — openshift.py renders manifests
+  # through string.Template.substitute, which treats it as a placeholder.
+  ANTHROPIC_VERTEX_PROJECT_ID: "itpc-XXXXXXXX"
+  NCS_VERTEX_LOCATION: "us-east5"
+  NCS_LLM_MODEL: "claude-sonnet-4-5@20250929"
+  OLLAMA_EMBED_MODEL: "nomic-embed-text"
+  OLLAMA_HOST: "http://ollama:11434"
+  PGHOST: "postgres"
+  PGPORT: "5432"

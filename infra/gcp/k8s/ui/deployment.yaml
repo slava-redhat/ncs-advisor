@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+  namespace: ${NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui
+  template:
+    metadata:
+      labels:
+        app: ui
+    spec:
+      # KSA annotated for Workload Identity — the ui reaches Claude-on-Vertex
+      # via the bound Google SA, no ADC key file in the cluster.
+      serviceAccountName: ncs
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: ui
+          image: ${REGISTRY}/ui:${TAG}
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8501
+          envFrom:
+            - configMapRef:
+                name: ncs-config
+            - secretRef:
+                name: ncs-secrets
+          env:
+            # Streamlit needs a writable $$HOME under runAsNonRoot.
+            - name: HOME
+              value: /tmp
+          resources:
+            requests:
+              cpu: ${UI_CPU_REQUEST}
+              memory: ${UI_MEMORY_REQUEST}
+            limits:
+              cpu: ${UI_CPU_LIMIT}
+              memory: ${UI_MEMORY_LIMIT}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 15

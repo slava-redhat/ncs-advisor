@@ -1,0 +1,2 @@
+version,symptom,cause,resolution,ticket_id
+25.7,"Node stuck in NotReady after upgrade","kubelet cert expired during maintenance window","Rotate the node cert with `ncs node cert-renew <node>` then `systemctl restart kubelet`",NCSFM-12345

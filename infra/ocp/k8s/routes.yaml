@@ -1,0 +1,24 @@
+# OpenShift Route replaces the GKE nginx Ingress. The LangGraph runs in-process
+# inside the ui, so there is a single Route to the Streamlit ui (no separate
+# orchestrator/API routes).
+#
+# host defaults to the cluster's routing subdomain
+# (<name>-<namespace>.apps.<cluster-domain>) unless OCP_ROUTE_HOST is overridden.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ncs-ui
+  namespace: ${NAMESPACE}
+  annotations:
+    haproxy.router.openshift.io/timeout: 600s
+spec:
+  host: ${ROUTE_HOST}
+  path: /
+  to:
+    kind: Service
+    name: ui
+  port:
+    targetPort: 8501
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

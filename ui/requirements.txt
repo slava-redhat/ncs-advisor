@@ -1,0 +1,8 @@
+streamlit>=1.57
+langgraph>=0.2.60
+langchain-core>=0.3
+langchain-google-vertexai>=2.0
+anthropic[vertex]>=0.40
+psycopg[binary]>=3.1
+psycopg_pool>=3.2
+requests

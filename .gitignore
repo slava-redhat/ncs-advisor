@@ -1,0 +1,8 @@
+.env
+.application_default_credentials.json
+__pycache__/
+*.pyc
+data/**/pdfs/*.pdf
+data/**/solutions/*.pdf
+data/**/solutions/*.csv
+!**/.gitkeep

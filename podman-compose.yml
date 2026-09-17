@@ -1,0 +1,52 @@
+# NCS Advisor. 2 long-running services (db + ui) plus a one-shot ingest job.
+# The LangGraph runs in-process inside the ui service (no separate API).
+# Embeddings use your HOST Ollama (GPU) at host.containers.internal:11434.
+# Run:  podman compose --env-file .env up --build
+version: "3"
+
+services:
+  db:
+    image: docker.io/pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ingest:
+    build: ./ingest
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.containers.internal:host-gateway"   # reach host Ollama (GPU)
+    volumes:
+      - ./data:/app/data:ro,Z
+    restart: "no"        # one-shot job (run via `make ingest`)
+
+  ui:
+    build: ./ui
+    env_file: .env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/application_default_credentials.json
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.containers.internal:host-gateway"   # reach host Ollama (GPU)
+    userns_mode: "keep-id:uid=1000,gid=1000"
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./.application_default_credentials.json:/gcloud/application_default_credentials.json:ro,Z
+
+volumes:
+  pgdata:
