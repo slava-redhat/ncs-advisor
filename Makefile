@@ -44,6 +44,7 @@ reingest: ollama-check ## Force full rebuild: clear the corpus and re-embed ever
 	$(DC) run --rm -e INGEST_RESET=1 ingest
 
 rag-eval: ## Evaluate dense, word/FTS, hybrid RRF, and diagnostic MMR recall
+	$(DC) up -d --build --force-recreate ui
 	$(DC) exec -T ui python eval_rag.py
 
 stats: ## Corpus totals (chunks by version + source_type)

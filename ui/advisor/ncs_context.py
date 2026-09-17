@@ -13,8 +13,9 @@ containerized apps. On top of Kubernetes it adds Helm package management, Istio 
 service mesh, backup, integrated logging/monitoring, and a REST API + `ncs` CLI.
 
 NODE ROLES
-- Controller/master nodes (×3, HA): Kubernetes control plane + container registry; \
-not scale-out — a failed controller is recovered via a dedicated Replace operation.
+- Controller/master nodes: Kubernetes control plane + container registry; HA layouts \
+commonly use three controllers, but the actual topology must be verified for the cluster. \
+A failed controller is recovered via a dedicated Replace operation.
 - Worker nodes: run CNFs/apps; NCS's own services also run here.
 - Edge nodes: external VIP + interface to the public network.
 - Storage nodes: Ceph-based persistent storage (optional/dedicated).
