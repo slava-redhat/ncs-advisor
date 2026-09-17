@@ -1,4 +1,4 @@
-.PHONY: help up down logs ingest reingest stats sources versions clean \
+.PHONY: help up down logs ingest reingest rag-eval stats sources versions clean \
         vector-db-backup vector-db-restore
 .DEFAULT_GOAL := help
 
@@ -42,6 +42,9 @@ reingest: ollama-check ## Force full rebuild: clear the corpus and re-embed ever
 	$(DC) up -d db
 	$(DC) build ingest
 	$(DC) run --rm -e INGEST_RESET=1 ingest
+
+rag-eval: ## Evaluate dense, word/FTS, hybrid RRF, and diagnostic MMR recall
+	$(DC) exec -T ui python eval_rag.py
 
 stats: ## Corpus totals (chunks by version + source_type)
 	@$(DC) exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c \

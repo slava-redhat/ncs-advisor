@@ -164,7 +164,20 @@ def synthesize(state: dict) -> dict:
         "baremetal`/Ironic. Symmetrically, if the deployment is CN-A, do not apply NCS-"
         "Manager-only (CN-B) procedures. If no source matches the stated flavor, say so "
         "and ask for flavor-specific documentation rather than borrowing the other "
-        "flavor's steps.\n\n"
+        "flavor's steps.\n"
+        "7. NODE-ROLE PRECISION: the user told you which node role(s) are affected "
+        "(controller/master, worker, edge, storage, deployer, etc.) — never present a "
+        "source about a DIFFERENT node role as a 'Directly relevant' cause, and never give "
+        "it a prescriptive fix action, just because the surface-level condition looks "
+        "similar (e.g. a controller-node 'SchedulingDisabled'/NotReady fix is NOT "
+        "automatically the cause of a reported WORKER-node NotReady — do not tell the user "
+        "to go uncordon a controller unless they told you a controller is involved). If a "
+        "source only covers a different role, do NOT put it in 'Likely Cause(s)' at all — "
+        "move it to a 'Things to verify' / triage question instead, phrased as a question "
+        "(e.g. 'Are all controller/master nodes Ready and not SchedulingDisabled? A "
+        "different-role source [n] notes this can affect scheduling — worth ruling out, "
+        "but it's not confirmed relevant to your worker-role symptom'). Only call something "
+        "a cause once a source explicitly ties it to the SAME role the user reported.\n\n"
         f"SOURCES:\n{ctx}"))
     ans = get_llm().invoke([sys, *state["messages"]])
     return {"messages": [ans]}

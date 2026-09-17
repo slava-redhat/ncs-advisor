@@ -29,6 +29,43 @@ Streamlit chat (in-process graph)
 - **cve_lookup** — only for security questions; NVD REST 2.0 by CVE id or keyword.
 - **synthesize** — Claude answers from the retrieved sources only, with `[n]` citations.
 
+## Retrieval evaluation
+
+The checked-in `ui/eval_golden_set.json` contains ten source-anchored queries
+covering alarms, upgrades, Ceph, storage, worker networking, and the CN-B
+worker-upgrade case. Run the evaluation against the running stack with:
+
+```bash
+make rag-eval
+```
+
+The production retriever is **hybrid RRF**, not MMR. The report includes
+`Recall@8` and `MRR@8` for dense vectors, PostgreSQL word/FTS search
+(`words`), hybrid RRF, and a diagnostic dense-only MMR rerank. It also reports
+what percentage of the hybrid top-8 came from both lists, dense only, or words
+only. MMR is diagnostic only and is not used by the production path.
+
+Baseline measured on the ingested GKE corpus on 2026-09-17:
+
+```text
+cases=10, k=8, candidate_pool=24, mmr_lambda=0.5
+                    Recall@8   MRR@8
+dense                 100%      84.17%
+words/FTS               50%      43.33%
+hybrid RRF            100%      95.00%
+diagnostic MMR        100%      86.25%
+
+Hybrid top-8 candidate presence:
+both dense+words       15.0%  (12/80)
+dense only             83.8%  (67/80)
+words only              1.3%  (1/80)
+```
+
+The golden set is intentionally source-level: a hit means the expected
+ingested source file appears in the top-k, not that an LLM judged the answer.
+Re-run after corpus, embedding-model, chunking, or retrieval changes and update
+the baseline above only when the command output has been reviewed.
+
 ## Data layout
 
 Version = the `NCS-XX-Y` directory (`NCS-25-7` → `25.7`). Drop files, then `make ingest`.

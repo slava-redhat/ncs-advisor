@@ -1,0 +1,62 @@
+[
+  {
+    "id": "ssh-alarm-clear",
+    "version": "24.7",
+    "query": "SSH alarm 2800055 is cleared after five minutes",
+    "expected_sources": ["24.7/SSH_alarm_2800055_is_cleared_after_5_minutes.pdf"]
+  },
+  {
+    "id": "storage-osd-scaleout",
+    "version": "24.7",
+    "query": "storage node scale out fails during OSD creation in a new storage hostgroup",
+    "expected_sources": ["24.7/A1_Storage_node_Scale_out_failing_in_Node_Provisioning_Stage_OSD_creation_for_Storage_node_in_New_Storage_hostgroup_failing.pdf"]
+  },
+  {
+    "id": "egressgateway-workers",
+    "version": "24.7",
+    "query": "egressgateway routes are not added to worker nodes",
+    "expected_sources": ["24.7/Egressgateway_routes_not_added_to_workers.pdf"]
+  },
+  {
+    "id": "rook-ceph-upgrade",
+    "version": "24.7",
+    "query": "Rook Ceph upgrade from NCS 24.7 to 24.11",
+    "expected_sources": ["24.7/Rook-Ceph_Upgrade_24.7-_24.11_version.pdf"]
+  },
+  {
+    "id": "ceph-upgrade-resume",
+    "version": "24.11",
+    "query": "resume fails during Ceph upgrade because Ceph is not OK",
+    "expected_sources": ["24.11/Resume_fails_during_ceph_upgrade_as_ceph_not_ok.pdf"]
+  },
+  {
+    "id": "pip38-upgrade",
+    "version": "24.11",
+    "query": "upgrade to NCS 24.11 fails because pip3.8 command is not found",
+    "expected_sources": ["24.11/Upgrade_to_NCS24.11_fails_due_to_pip3.8_command_not_found.pdf"]
+  },
+  {
+    "id": "leapp-sqlite-upgrade",
+    "version": "25.7",
+    "query": "NCS 25.7 upgrade fails in leapp with sqlite3 OperationalError unable to open database file",
+    "expected_sources": ["25.7/Upgrade_to_25.7_fails_in_leapp_upgrade_due_to_sqlite3.OperationalError_unable_to_open_database_file.pdf"]
+  },
+  {
+    "id": "workerbm-multipath",
+    "version": "25.7",
+    "query": "WorkerBM has an unsorted multipath route through EdgeBM nodes",
+    "expected_sources": ["25.7/TSN-NCS-SW-028_Fixing_WorkerBM_unsorted_multipath_route_via_EdgeBM_nodes.pdf"]
+  },
+  {
+    "id": "worker-notready-upgrade",
+    "version": "25.11",
+    "query": "worker node becomes NotReady during a CN-B bare-metal NCS upgrade",
+    "expected_sources": ["25.11/NCS25_11-Upgrading_BM_Deployment.pdf"]
+  },
+  {
+    "id": "baremetal-ipmi-boot",
+    "version": "24.7",
+    "query": "IPMI access requirements configure the first boot device for bare-metal installation",
+    "expected_sources": ["24.7/NCS24_7-SATE_Bare-metal.pdf"]
+  }
+]
