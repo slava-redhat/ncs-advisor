@@ -47,6 +47,10 @@ rag-eval: ## Evaluate dense, word/FTS, hybrid RRF, and diagnostic MMR recall
 	$(DC) up -d --build --force-recreate ui
 	$(DC) exec -T ui python eval_rag.py
 
+answer-eval: ## Run the graph end-to-end and assert answer grounding + citations
+	$(DC) up -d --build --force-recreate ui
+	$(DC) exec -T ui python eval_answers.py
+
 stats: ## Corpus totals (chunks by version + source_type)
 	@$(DC) exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c \
 	  "SELECT metadata->>'version' AS version, metadata->>'source_type' AS type, \
