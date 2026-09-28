@@ -2,6 +2,7 @@
   {
     "id": "cnb-worker-notready",
     "query": "On NCS 25.11 CN-B (BareMetal), a worker node went NotReady right after the NCS upgrade. kubelet is up but the node stays NotReady. What are the likely causes and how do I fix it?",
+    "followup": "CN-B bare-metal, affected node role is worker, it happened during the upgrade phase.",
     "must_include": ["worker"],
     "must_exclude": ["openstack baremetal node", "ironic node"],
     "require_citation": true
@@ -9,6 +10,7 @@
   {
     "id": "leapp-sqlite-upgrade",
     "query": "NCS 25.7 upgrade fails in the leapp upgrade with sqlite3.OperationalError: unable to open database file. How do I fix it?",
+    "followup": "CN-B bare-metal, on the controller/master node, during the OS upgrade (leapp) phase.",
     "must_include": ["sqlite"],
     "must_exclude": [],
     "require_citation": true
@@ -16,6 +18,7 @@
   {
     "id": "workerbm-multipath",
     "query": "On NCS 25.7, WorkerBM nodes have an unsorted multipath route going through the EdgeBM nodes. How is this corrected?",
+    "followup": "CN-B bare-metal, worker and edge nodes, day-2 operation.",
     "must_include": ["multipath"],
     "must_exclude": [],
     "require_citation": true
@@ -23,6 +26,7 @@
   {
     "id": "ceph-upgrade-resume",
     "query": "On NCS 24.11, resume fails during the Ceph upgrade because Ceph is not OK. What should I do?",
+    "followup": "Storage nodes, during the upgrade phase; Ceph reports it is not healthy so resume will not continue.",
     "must_include": ["ceph"],
     "must_exclude": [],
     "require_citation": true
