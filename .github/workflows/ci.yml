@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  self-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r ui/requirements.txt -r ingest/requirements.txt
+
+      - name: Byte-compile all Python
+        run: python -m py_compile $(git ls-files '*.py')
+
+      # The self-checks below need no DB / Ollama / Vertex — pure logic guards for
+      # the retrieval fusion, flavor rules, citation verifier, and TSN/PDF parsing.
+      - name: retrieval self-check (RRF fusion + flavor conflict)
+        working-directory: ui
+        run: python -m advisor.retrieval
+
+      - name: nodes self-check (citation verifier)
+        working-directory: ui
+        run: python -m advisor.nodes
+
+      - name: ingest self-check (TSN parser + clean_page + detect_flavor)
+        working-directory: ingest
+        env:
+          INGEST_SELFCHECK: "1"
+        run: python ingest.py

@@ -1,5 +1,5 @@
-.PHONY: help up down logs ingest reingest rag-eval stats sources versions clean \
-        vector-db-backup vector-db-restore
+.PHONY: help up down logs ingest reingest test rag-eval answer-eval stats sources \
+        versions clean vector-db-backup vector-db-restore
 .DEFAULT_GOAL := help
 
 POSTGRES_USER ?= ncs
@@ -42,6 +42,12 @@ reingest: ollama-check ## Force full rebuild: clear the corpus and re-embed ever
 	$(DC) up -d db
 	$(DC) build ingest
 	$(DC) run --rm -e INGEST_RESET=1 ingest
+
+test: ## Run pure-logic self-checks (no DB/Ollama/Vertex) — same as CI
+	$(DC) build ui ingest
+	$(DC) run --rm --no-deps ui python -m advisor.retrieval
+	$(DC) run --rm --no-deps ui python -m advisor.nodes
+	$(DC) run --rm --no-deps -e INGEST_SELFCHECK=1 ingest python ingest.py
 
 rag-eval: ## Evaluate dense, word/FTS, hybrid RRF, and diagnostic MMR recall
 	$(DC) up -d --build --force-recreate ui
