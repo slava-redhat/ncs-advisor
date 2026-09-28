@@ -52,8 +52,25 @@ def available_versions() -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
+def _flavor_family(f: str | None) -> str | None:
+    """CN-A and CN-A-SRIOV are one family; CN-B is the other."""
+    if not f:
+        return None
+    up = f.upper()
+    if "CN-B" in up or "CNB" in up:
+        return "CN-B"
+    if "CN-A" in up or "CNA" in up:
+        return "CN-A"
+    return None
+
+
+def _flavor_conflicts(chunk_flavor: str | None, user_flavor: str | None) -> bool:
+    cf, uf = _flavor_family(chunk_flavor), _flavor_family(user_flavor)
+    return bool(cf and uf and cf != uf)
+
+
 def rag_search_hybrid(query: str, version: str | None = None, k: int = 8,
-                      pool: int = 24) -> list[dict]:
+                      pool: int = 24, flavor: str | None = None) -> list[dict]:
     qvec = _vec(embed(query, task="search_query"))
     clauses, params = [], []
     if version:
@@ -87,9 +104,14 @@ def rag_search_hybrid(query: str, version: str | None = None, k: int = 8,
         for doc_id, r in rows.items():
             if (r[3] or {}).get("source_type") == "solution":
                 scores[doc_id] += SOLUTION_BOOST
-        top = sorted(scores, key=scores.get, reverse=True)[:k]
+        ordered = [i for i in sorted(scores, key=scores.get, reverse=True) if i in rows]
+        if flavor:  # demote the other flavor's chunks; never drop them (keeps recall)
+            ok = [i for i in ordered
+                  if not _flavor_conflicts((rows[i][3] or {}).get("flavor"), flavor)]
+            ordered = ok + [i for i in ordered if i not in ok]
+        top = ordered[:k]
         return [{"text": rows[i][1], "source_url": rows[i][2], "metadata": rows[i][3]}
-                for i in top if i in rows]
+                for i in top]
 
 
 def _rrf_selfcheck():
@@ -98,7 +120,11 @@ def _rrf_selfcheck():
     both = 1.0 / (RRF_K_ + 1) + 1.0 / (RRF_K_ + 2)
     one = 1.0 / (RRF_K_ + 1)
     assert both > one, "RRF fusion broken: consensus must beat single-list"
-    print("ok: RRF fusion self-check passed")
+    # Flavor: CN-A/CN-A-SRIOV are one family; conflict only across families.
+    assert _flavor_conflicts("CN-A", "CN-B") and _flavor_conflicts("CN-B", "CN-A")
+    assert not _flavor_conflicts("CN-A-SRIOV", "CN-A")
+    assert not _flavor_conflicts(None, "CN-B") and not _flavor_conflicts("CN-B", None)
+    print("ok: RRF fusion + flavor-conflict self-checks passed")
 
 
 if __name__ == "__main__":

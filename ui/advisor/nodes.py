@@ -119,7 +119,8 @@ def clarify(state: dict) -> dict:
 
 
 def retrieve(state: dict) -> dict:
-    hits = rag_search_hybrid(state["symptoms"], version=state["version"], k=8)
+    hits = rag_search_hybrid(state["symptoms"], version=state["version"], k=8,
+                             flavor=state.get("deployment"))
     return {"hits": hits}
 
 
@@ -143,7 +144,8 @@ def cve_lookup(state: dict) -> dict:
             for c in data
         )
         enriched_query = f"{state['symptoms']} {cve_terms} NCS {state.get('version', '')}"
-        hits = rag_search_hybrid(enriched_query, version=state.get("version"), k=8)
+        hits = rag_search_hybrid(enriched_query, version=state.get("version"), k=8,
+                                 flavor=state.get("deployment"))
         baseline_hits = rag_search_hybrid(
             f"NCS {state.get('version', '')} Release Notes corrected common "
             "security vulnerabilities kernel RHEL OS baseline",

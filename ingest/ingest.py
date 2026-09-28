@@ -107,16 +107,39 @@ def _vec(v) -> str:
     return "[" + ",".join(f"{x:.6f}" for x in v) + "]"
 
 
+# Tag a chunk's deployment flavor ONLY when its text shows one family's tooling
+# unambiguously (see docs/adr/0006). Used at retrieval to demote — never drop —
+# the other flavor's content for a user's stated deployment. Conservative on
+# purpose: generic "bare metal" is deliberately NOT a signal (CN-A hosts are
+# physical too); a chunk that names neither, or both, stays untagged.
+_CNA_SIGNALS = re.compile(
+    r"\b(?:openstack|ironic|cbis|opentofu|clcm|deployer vm|deploy server)\b", re.I)
+_CNB_SIGNALS = re.compile(
+    r"\b(?:ncs manager|bcmt-admin|config4|config5)\b", re.I)
+
+
+def detect_flavor(text: str) -> str | None:
+    a, b = bool(_CNA_SIGNALS.search(text or "")), bool(_CNB_SIGNALS.search(text or ""))
+    if a and not b:
+        return "CN-A"
+    if b and not a:
+        return "CN-B"
+    return None  # none, or ambiguous (both) → leave untagged
+
+
 def write_chunks(cur, rows: list[tuple[str, dict]], source: str):
     """rows = [(text, extra_meta), ...]. Embeds in batch and inserts."""
     texts = [t.replace("\x00", "") for t, _ in rows]  # PG rejects NUL; PDFs leak them
     metas = [m for _, m in rows]
     vecs = embed_batch(texts, task="search_document") if texts else []
     for text, meta, emb in zip(texts, metas, vecs):
+        md = {**meta, "source": source}
+        if (flav := detect_flavor(text)):
+            md["flavor"] = flav
         cur.execute(
             "INSERT INTO doc_chunk (text, source_url, metadata, embedding) "
             "VALUES (%s,%s,%s::jsonb,%s::vector)",
-            (text, meta.get("source_url", ""), json.dumps({**meta, "source": source}), _vec(emb)),
+            (text, meta.get("source_url", ""), json.dumps(md), _vec(emb)),
         )
 
 
@@ -278,7 +301,11 @@ def _selfcheck():
     assert _pick(s, "keywords") == "foo, bar", s
     assert _JIRA_RE.findall(_pick(s, "related jira")) == ["NCSFM-1"]
     assert clean_page("real line\nDN1000291295 1-0\n©2026 Nokia.") == "real line"
-    print("ok: TSN section parser + clean_page self-check passed")
+    assert detect_flavor("run openstack baremetal node list") == "CN-A"
+    assert detect_flavor("deploy via NCS Manager on config4") == "CN-B"
+    assert detect_flavor("kubelet is NotReady on the worker") is None       # no signal
+    assert detect_flavor("openstack and NCS Manager both") is None          # ambiguous
+    print("ok: TSN section parser + clean_page + detect_flavor self-check passed")
 
 
 if __name__ == "__main__":
