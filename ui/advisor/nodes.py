@@ -240,6 +240,8 @@ def synthesize(state: dict) -> dict:
         f"{_facts(state)}\n"
         "Answer using the SOURCES below. Structure a troubleshooting answer as: likely "
         "cause(s) → diagnostic/fix steps (commands, files, node roles) → what to check next.\n"
+        f"Cite sources only by the bracketed numbers actually shown below ([1]-[{len(hits)}]); "
+        "never write a citation number that is not in the SOURCES list.\n"
         "GROUNDING RULES — follow strictly:\n"
         "1. State a cause ONLY if a source's text actually ties it to the reported symptom, "
         "and cite it [n]. Do not connect topics just because they're both 'security'.\n"
