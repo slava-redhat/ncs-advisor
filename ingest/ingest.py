@@ -144,6 +144,80 @@ def load_pdf(cur, path, version, source_type):
     print(f"{source_type} loaded: {source} ({len(rows)} chunks)")
 
 
+# --- TSN-aware structured ingest --------------------------------------------
+# Nokia Technical Support Notes follow a fixed template. Parsing it lets us keep
+# the "Solution and correction instructions" retrievable as its own unit, tag the
+# TSN/Jira ids, and fold the keywords into the indexed text — instead of blindly
+# chunking the whole PDF (see docs/adr/0006). Best-effort: any PDF that doesn't
+# parse as a TSN falls back to load_pdf's blind path.
+_TSN_ID_RE = re.compile(r"TSN-NCS-SW-\d+", re.I)
+_JIRA_RE = re.compile(r"\b(?:NCSFM|NCSDEV|CB)-\d+\b")
+_HEADING_RE = re.compile(r"^\s*\d+(?:\.\d+)?\s+([A-Z].{2,58})$")
+
+
+def _tsn_sections(cleaned: str) -> dict[str, str]:
+    """Slice cleaned TSN text into {heading_lower: body} by its numbered headings."""
+    lines = cleaned.splitlines()
+    heads = [(i, m.group(1).strip().lower())
+             for i, ln in enumerate(lines) if (m := _HEADING_RE.match(ln))]
+    out: dict[str, str] = {}
+    for j, (i, title) in enumerate(heads):
+        end = heads[j + 1][0] if j + 1 < len(heads) else len(lines)
+        out.setdefault(title, "\n".join(lines[i + 1:end]).strip())
+    return out
+
+
+def _pick(sections: dict[str, str], *prefixes: str) -> str:
+    for p in prefixes:
+        for title, body in sections.items():
+            if title.startswith(p):
+                return body
+    return ""
+
+
+def load_tsn(cur, path, version) -> bool:
+    """Parse a TSN into structured solution chunks. Returns False (no writes) if
+    the PDF isn't a recognizable TSN, so the caller can fall back to blind ingest."""
+    raw = open(path, "rb").read()
+    fname = os.path.basename(path)
+    source = f"{version}/{fname}"
+    digest = sha(raw)
+    if seen(cur, source, digest):
+        print(f"unchanged: {source}"); return True
+    try:
+        reader = PdfReader(io.BytesIO(raw))
+    except Exception:
+        return False
+    full = "\n".join(clean_page(p.extract_text()) for p in reader.pages)
+    tsn = _TSN_ID_RE.search(full)
+    sections = _tsn_sections(full)
+    desc = _pick(sections, "detailed description")
+    solution = _pick(sections, "solution and correction")
+    if not tsn or not (desc or solution):
+        return False  # not a TSN we can parse → caller uses the blind path
+    tsn_id = tsn.group(0).upper()
+    keywords = _pick(sections, "keywords")
+    purpose = (_pick(sections, "purpose") or fname).splitlines()
+    title = f"{tsn_id}: {(purpose[0] if purpose else fname)[:80].strip()}"
+    jira = list(dict.fromkeys(_JIRA_RE.findall(_pick(sections, "related jira") or full)))
+    base = {"version": version, "source_type": "solution", "title": title,
+            "tsn_id": tsn_id, "ticket_id": ", ".join(jira), "keywords": keywords[:500]}
+    # symptom/cause context (keywords folded in so they're indexed) vs. the fix.
+    symptom_block = "\n".join(filter(None, [
+        f"Keywords: {keywords}" if keywords else "",
+        _pick(sections, "executive summary"), _pick(sections, "network impact"), desc]))
+    drop_chunks(cur, source)
+    rows: list[tuple[str, dict]] = []
+    for label, body in (("description", symptom_block), ("solution", solution)):
+        for piece in _SPLITTER.split_text(body or ""):
+            if piece.strip():
+                rows.append((f"[{tsn_id}] {label}: {piece}", {**base, "section": label}))
+    write_chunks(cur, rows, source)
+    mark(cur, source, "solution", digest, len(rows))
+    print(f"tsn loaded: {source} [{tsn_id}] ({len(rows)} chunks, jira={base['ticket_id'] or '-'})")
+    return True
+
+
 def load_solutions_csv(cur, path, version):
     raw = open(path, "rb").read()
     fname = os.path.basename(path)
@@ -172,7 +246,8 @@ def load_version(cur, vdir):
     for p in sorted(glob.glob(f"{vdir}/pdfs/*.pdf")):
         load_pdf(cur, p, version, "doc")
     for p in sorted(glob.glob(f"{vdir}/solutions/*.pdf")):
-        load_pdf(cur, p, version, "solution")
+        if not load_tsn(cur, p, version):       # structured TSN parse …
+            load_pdf(cur, p, version, "solution")  # … else blind solution ingest
     for p in sorted(glob.glob(f"{vdir}/solutions/*.csv")):
         load_solutions_csv(cur, p, version)
 
@@ -194,5 +269,17 @@ def main():
     print("ingest complete")
 
 
+def _selfcheck():
+    sample = ("1 Purpose\nwhy\n6 Keywords\nfoo, bar\n9 Detailed description\nthe symptom\n"
+              "10 Solution and correction instructions\ndo X then Y\n11 Related Jira ID\nNCSFM-1")
+    s = _tsn_sections(sample)
+    assert _pick(s, "detailed description") == "the symptom", s
+    assert _pick(s, "solution and correction") == "do X then Y", s
+    assert _pick(s, "keywords") == "foo, bar", s
+    assert _JIRA_RE.findall(_pick(s, "related jira")) == ["NCSFM-1"]
+    assert clean_page("real line\nDN1000291295 1-0\n©2026 Nokia.") == "real line"
+    print("ok: TSN section parser + clean_page self-check passed")
+
+
 if __name__ == "__main__":
-    main()
+    _selfcheck() if os.environ.get("INGEST_SELFCHECK") else main()
