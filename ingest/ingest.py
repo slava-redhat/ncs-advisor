@@ -19,6 +19,7 @@ import hashlib
 import io
 import json
 import os
+import re
 
 import psycopg
 from pypdf import PdfReader
@@ -28,6 +29,26 @@ from embeddings import embed_batch, ensure_model
 
 DATA = os.environ.get("DATA_DIR", "/app/data")
 _SPLITTER = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+
+# Boilerplate that repeats on every NCS/TSN page and, unstripped, gets embedded
+# and FTS-indexed as if it were content — diluting both retrieval arms. Match
+# only unambiguous lines (running "DN<id> <issue>" footer, Nokia legal notices,
+# lone TOC dot-leaders) so real prose is never dropped.
+_BOILERPLATE = re.compile(
+    r"^\s*(?:"
+    r"DN\d+\s+\d+-\d+"                                # running footer: "DN1000291295 1-0"
+    r"|©?\s*\d{4}\s+Nokia\b.*"                        # copyright line
+    r"|Nokia Confidential Information.*"              # confidentiality notice
+    r"|NO WARRANTY OF ANY KIND.*"                     # start of the legal block
+    r"|.*\.{5,}\s*\d*\s*"                             # TOC dot-leader rows
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+
+def clean_page(text: str) -> str:
+    return "\n".join(ln for ln in (text or "").splitlines()
+                     if not _BOILERPLATE.match(ln))
 
 
 def conn():
@@ -114,7 +135,7 @@ def load_pdf(cur, path, version, source_type):
     drop_chunks(cur, source)
     rows: list[tuple[str, dict]] = []
     for pageno, page in enumerate(reader.pages, 1):
-        for piece in _SPLITTER.split_text(page.extract_text() or ""):
+        for piece in _SPLITTER.split_text(clean_page(page.extract_text())):
             if piece.strip():
                 rows.append((piece, {"version": version, "source_type": source_type,
                                      "title": title, "page": pageno}))

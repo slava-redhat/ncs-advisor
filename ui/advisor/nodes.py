@@ -4,6 +4,8 @@ router → ask_version            (no version stated)
        → clarify                (version known but request too vague — investigate first)
        → retrieve → cve_lookup? → synthesize
 """
+import re
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from .cve import extract_cve_ids, fetch_cve, search_cve
@@ -64,7 +66,8 @@ def router(state: dict) -> dict:
         + (" NOTE: you have already asked the user once, so unless the request is still "
            "completely empty, set enough_context=True and proceed with what you have."
            if already else "")))
-    d = get_llm().with_structured_output(RouterDecision).invoke([sys, *state["messages"]])
+    d = (get_llm().with_structured_output(RouterDecision)
+         .with_retry(stop_after_attempt=3).invoke([sys, *state["messages"]]))
     version = d.version if d.version in versions else None
     discovered_cves = extract_cve_ids(_conversation_text(state["messages"]))
     cve_ids = list(dict.fromkeys(
@@ -195,8 +198,42 @@ def _facts(state) -> str:
     return ("Known about the environment — " + "; ".join(bits)) if bits else ""
 
 
+_CITE_RE = re.compile(r"\[(\d+)\]")
+
+
+def _verify_citations(text: str, n_sources: int) -> str:
+    """Enforce the one grounding rule that's mechanically checkable: a numbered
+    [n] citation must map to a source actually given to the model (hits are
+    numbered 1..n; CVE blocks use named [CVE/...] tags, not integers). Neutralize
+    out-of-range markers to [?] and flag them, instead of letting a fabricated
+    citation ship with false authority."""
+    bad = sorted({int(m) for m in _CITE_RE.findall(text) if not 1 <= int(m) <= n_sources})
+    if not bad:
+        return text
+    fixed = _CITE_RE.sub(
+        lambda m: m.group(0) if 1 <= int(m.group(1)) <= n_sources else "[?]", text)
+    return fixed + (
+        "\n\n> ⚠ Neutralized citation(s) " + ", ".join(f"[{b}]" for b in bad)
+        + f" — they point past the {n_sources} retrieved source(s). "
+        "Verify those claims against the cited docs before acting on them.")
+
+
+def _no_context_message(state) -> str:
+    v = state.get("version") or "your version"
+    return (
+        f"I couldn't find NCS {v} sources that match this, so I won't guess. "
+        "Share these and I'll ground an answer:\n"
+        "- the exact error / alarm code / pod or node state (verbatim)\n"
+        "- the affected node role and deployment flavor (CN-A / CN-B / CN-A SR-IOV)\n"
+        "- the lifecycle phase (install / upgrade / heal / scale / day-2)\n"
+        "- relevant `/opt/bcmt/log` entries or the failing service/pod name")
+
+
 def synthesize(state: dict) -> dict:
-    ctx = _context(state.get("hits", []), state.get("cve_data", []))
+    hits, cve_data = state.get("hits", []), state.get("cve_data", [])
+    if not hits and not cve_data:  # nothing grounded — refuse rather than improvise
+        return {"messages": [AIMessage(content=_no_context_message(state))]}
+    ctx = _context(hits, cve_data)
     sys = SystemMessage(content=(
         f"{NCS_BRIEF}\n\n"
         f"You are an NCS support advisor for version {state.get('version')}. "
@@ -273,7 +310,8 @@ def synthesize(state: dict) -> dict:
         "kernel. Establish applicability only by comparing the user's observed package "
         "to the vendor's affected/fixed ranges.\n\n"
         f"SOURCES:\n{ctx}"))
-    ans = get_llm().invoke([sys, *state["messages"]])
+    ans = get_llm().with_retry(stop_after_attempt=3).invoke([sys, *state["messages"]])
+    ans.content = _verify_citations(ans.content, len(hits))
     return {"messages": [ans]}
 
 
@@ -289,3 +327,16 @@ def route_after_router(state: dict) -> str:
 def route_after_retrieve(state: dict) -> str:
     return "cve_lookup" if (state.get("issue_type") == "security"
                             or state.get("cve_ids")) else "synthesize"
+
+
+def _selfcheck():
+    assert _verify_citations("cause is X [1] and Y [2]", 2) == "cause is X [1] and Y [2]"
+    out = _verify_citations("real [1], fake [7]", 2)
+    body = out.split("\n\n> ⚠")[0]
+    assert body == "real [1], fake [?]" and "Neutralized" in out, out
+    assert _verify_citations("no cites here", 0) == "no cites here"
+    print("ok: citation verifier self-check passed")
+
+
+if __name__ == "__main__":
+    _selfcheck()
