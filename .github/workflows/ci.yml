@@ -35,3 +35,6 @@ jobs:
         env:
           INGEST_SELFCHECK: "1"
         run: python ingest.py
+
+      - name: podman deploy self-check (ssh/rsync command construction)
+        run: python infra/podman/deploy.py selfcheck

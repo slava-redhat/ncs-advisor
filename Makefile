@@ -7,10 +7,28 @@ POSTGRES_DB   ?= ncs
 OLLAMA_LOCAL_URL ?= http://127.0.0.1:11434
 DC = podman-compose --env-file .env
 
-# Cloud deploy target: gcp (GKE) or ocp (OpenShift). Selects which driver and
-# backups/ dir the vector-db-* targets use.
+# Deploy target: gcp (GKE), ocp (OpenShift), or podman (remote VM). Selects which
+# driver and backups/ dir the vector-db-* targets use.
 TARGET ?= gcp
 VECTOR_DB_BACKUP ?= infra/$(TARGET)/backups/ncs-vector.sql.gz
+
+# Friendly SSH make-vars for TARGET=podman restore (map to the NCS_SSH_* env that
+# infra/podman/db_transfer.py reads). Only exported when set, so they don't clobber
+# any NCS_SSH_* already in the environment; gcp/ocp ignore them. Example:
+#   make vector-db-restore TARGET=podman SSH_HOST=10.0.0.5 SSH_USER=cloud-user \
+#        SSH_KEY=$HOME/env-keys/key_all_666
+ifneq ($(SSH_HOST),)
+export NCS_SSH_HOST := $(SSH_HOST)
+endif
+ifneq ($(SSH_USER),)
+export NCS_SSH_USER := $(SSH_USER)
+endif
+ifneq ($(SSH_KEY),)
+export NCS_SSH_KEY := $(SSH_KEY)
+endif
+ifneq ($(SSH_PORT),)
+export NCS_SSH_PORT := $(SSH_PORT)
+endif
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -73,8 +91,8 @@ versions: ## Show version dirs present on disk
 clean: ## Stop the stack AND delete the data volume (full reset)
 	$(DC) down -v
 
-vector-db-backup: ## Dump local pgvector DB to infra/$(TARGET)/backups (TARGET=gcp|ocp)
+vector-db-backup: ## Dump local pgvector DB to infra/$(TARGET)/backups (TARGET=gcp|ocp|podman)
 	python3 infra/$(TARGET)/db_transfer.py backup --output $(VECTOR_DB_BACKUP)
 
-vector-db-restore: ## Restore a dump into the $(TARGET) cluster Postgres (TARGET=gcp|ocp)
+vector-db-restore: ## Restore a dump into Postgres (TARGET=gcp|ocp|podman; podman: SSH_HOST/USER/KEY)
 	python3 infra/$(TARGET)/db_transfer.py restore --input $(VECTOR_DB_BACKUP)
