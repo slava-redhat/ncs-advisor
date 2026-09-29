@@ -46,7 +46,11 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./.application_default_credentials.json:/gcloud/application_default_credentials.json:ro,Z
+      # :z (shared SELinux label), NOT :Z — the ADC is mounted by every `ui`
+      # container we run (up, plus the test/eval one-shots). :Z assigns a private
+      # per-container MCS category and the last container to start "steals" the
+      # label, breaking the others (EACCES). :z shares one label so they coexist.
+      - ./.application_default_credentials.json:/gcloud/application_default_credentials.json:ro,z
 
 volumes:
   pgdata:

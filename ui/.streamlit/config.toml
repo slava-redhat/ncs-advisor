@@ -37,3 +37,10 @@ borderColor = "#3e4451"
 [browser]
 # Container HOME is read-only; disable telemetry to avoid a harmless write traceback.
 gatherUsageStats = false
+
+[server]
+# Reached by bare IP through podman's port-forwarder (and any reverse proxy),
+# Streamlit's default XSRF/CORS protection returns 403. This is an internal
+# tool on a trusted network, so disable both to allow direct IP access.
+enableCORS = false
+enableXsrfProtection = false
