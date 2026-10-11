@@ -1,0 +1,9 @@
+---
+# rollback role for TSN-EXAMPLE.
+# Every task in this file MUST carry tag `rollback`.
+# Only act on what is recorded in {{ tsn_marker_dir }} — never assume a default.
+
+- name: TSN-EXAMPLE — placeholder rollback task
+  ansible.builtin.debug:
+    msg: "Replace this with the real rollback steps."
+  tags: [rollback]

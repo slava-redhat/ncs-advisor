@@ -1,0 +1,7 @@
+---
+# TSN-EXAMPLE variables.
+# Replace all placeholders with values for this CVE / mitigation.
+
+cve_ids: []
+# Example marker paths (live under {{ tsn_marker_dir }} from group_vars/all.yml):
+# example_marker: "{{ tsn_marker_dir }}/example.orig"

@@ -1,0 +1,9 @@
+---
+# Shared read-only detection for install + rollback.
+# Add only tasks tagged [apply, rollback]. The validate role should be
+# self-contained and re-detect what it needs.
+
+- name: TSN-EXAMPLE — placeholder detection task
+  ansible.builtin.debug:
+    msg: "Replace this file with your TSN's read-only detection."
+  tags: [apply, rollback]

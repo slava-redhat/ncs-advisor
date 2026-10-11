@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage
 
 from advisor.graph import build_graph
 from advisor.retrieval import available_versions
+from advisor.tsn import build_tsn_tarball, make_tsn_id
 
 st.set_page_config(page_title="NCS Advisor", page_icon=":material/support_agent:",
                    layout="centered")
@@ -125,9 +126,31 @@ with st.sidebar:
         st.warning(f"DB unavailable: {e}", icon=":material/error:")
     st.caption("Answers are grounded in ingested docs + solutions and cited inline.")
     if st.button("New conversation", icon=":material/add_comment:", width="stretch"):
-        for k in ("thread_id", "history", "pending"):
+        for k in ("thread_id", "history", "pending", "tsn"):
             st.session_state.pop(k, None)
         st.rerun()
+
+    # --- TSN export: only once the advisor has produced an answer the user can approve
+    has_answer = any(r == "assistant" for r, _ in st.session_state.history)
+    if has_answer and not st.session_state.pending:
+        st.divider()
+        st.caption("Happy with the solution? Package it as a ready-to-run TSN.")
+        if st.button("Ready to make TSN solution", icon=":material/deployed_code:",
+                     width="stretch"):
+            values = graph.get_state(CONFIG).values
+            solution = next((t for r, t in reversed(st.session_state.history)
+                             if r == "assistant"), "")
+            conversation = "\n\n".join(f"{r}: {t}" for r, t in st.session_state.history)
+            tsn_id = make_tsn_id(values.get("version"), values.get("cve_ids") or [],
+                                 values.get("issue_type") or "issue")
+            with st.spinner("Building TSN bundle…"):
+                st.session_state.tsn = (
+                    tsn_id, build_tsn_tarball(conversation, solution, tsn_id))
+        if st.session_state.get("tsn"):
+            tsn_id, tarball = st.session_state.tsn
+            st.download_button(f"Download {tsn_id}.tar.gz", tarball,
+                               file_name=f"{tsn_id}.tar.gz", mime="application/gzip",
+                               icon=":material/download:", width="stretch")
 
 # --- render history ---------------------------------------------------------
 for role, text in st.session_state.history:
@@ -153,10 +176,12 @@ if not st.session_state.history and not st.session_state.pending:
     if pick:
         prompt = SUGGESTIONS[pick]
 
-typed = st.chat_input("Describe your NCS issue (mention your version, e.g. 25.7)…",
-                      submit_mode="disable")
-if typed:
-    prompt = typed
+# ponytail: hide free-text input while a choice form is pending
+if not st.session_state.pending:
+    typed = st.chat_input("Describe your NCS issue (mention your version, e.g. 25.7)…",
+                          submit_mode="disable")
+    if typed:
+        prompt = typed
 
 if prompt:
     st.session_state.history.append(("user", prompt))

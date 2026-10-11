@@ -1,0 +1,24 @@
+---
+# validate role for TSN-EXAMPLE.
+# Two sections:
+#   1. Informational checks  (tags: apply, rollback)  — feedback after apply/rollback.
+#   2. Strict checks         (tag: validate)          — fail the play on regression.
+
+###############################################################################
+# 1. Informational validation
+###############################################################################
+- name: TSN-EXAMPLE — placeholder informational check
+  ansible.builtin.debug:
+    msg: "Replace this with an informational check."
+  tags: [apply, rollback]
+
+###############################################################################
+# 2. Strict validation — run with `--tags validate`
+###############################################################################
+- name: TSN-EXAMPLE — placeholder strict assertion
+  ansible.builtin.assert:
+    that:
+      - true
+    fail_msg: "Replace this with a real assertion."
+    success_msg: "OK: placeholder assertion passed."
+  tags: [validate]

@@ -1,0 +1,12 @@
+---
+# install role for TSN-EXAMPLE.
+# Every task in this file MUST carry tag `apply` (the playbook does not apply
+# role-level tags so that the validate role can mix tags per task).
+#
+# Before making any change, capture pre-change state to {{ tsn_marker_dir }}/<name>.orig
+# so the rollback role can restore exactly what was there.
+
+- name: TSN-EXAMPLE — placeholder apply task
+  ansible.builtin.debug:
+    msg: "Replace this with the real apply steps."
+  tags: [apply]
