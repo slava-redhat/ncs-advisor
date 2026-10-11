@@ -12,7 +12,10 @@ set -euo pipefail
 
 EMBED_MODEL="${OLLAMA_EMBED_MODEL:-nomic-embed-text}"
 PROXY="${NCS_PROXY:-}"
-NO_PROXY_LIST="localhost,127.0.0.1,::1"
+# Include the in-cluster names: podman injects this NO_PROXY into the containers,
+# and the host Ollama (host.containers.internal) + db must NOT be proxied, or the
+# embed call 504s through the corp proxy. Matches deploy.py's proxy_exports list.
+NO_PROXY_LIST="localhost,127.0.0.1,::1,db,host.containers.internal"
 log() { printf '\n== %s ==\n' "$*"; }
 sudo_() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
 
@@ -65,6 +68,21 @@ for tool in curl make rsync; do
 done
 
 command -v podman >/dev/null 2>&1 || { log "installing podman"; install_pkg podman; }
+
+# Build RUN steps via chroot isolation. On restricted VMs (nested virt / limited
+# cgroups) the OCI runtime can't create the build container and buildah dies with
+# "did not get container create message from subprocess: EOF" before pip runs.
+# Persist it system-wide so a bare `podman-compose up` works too (make up sets it
+# itself). Override with BUILDAH_ISOLATION=oci if the runtime is actually fine.
+echo 'export BUILDAH_ISOLATION=chroot' | sudo_ tee /etc/profile.d/ncs-buildah.sh >/dev/null
+
+# Same class of restriction at RUN time: the systemd cgroup manager can't install
+# the eBPF device filter on cgroup v2 here ("crun: systemd failed to install eBPF
+# device filter"), so containers won't start. cgroupfs lets crun install it
+# directly. Non-destructive drop-in; existing pods must be recreated (down/up).
+sudo_ mkdir -p /etc/containers/containers.conf.d
+printf '%s\n' '[engine]' 'cgroup_manager="cgroupfs"' \
+  | sudo_ tee /etc/containers/containers.conf.d/90-cgroupfs.conf >/dev/null
 
 if ! command -v podman-compose >/dev/null 2>&1; then
   log "installing podman-compose"

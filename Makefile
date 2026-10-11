@@ -5,6 +5,12 @@
 POSTGRES_USER ?= ncs
 POSTGRES_DB   ?= ncs
 OLLAMA_LOCAL_URL ?= http://127.0.0.1:11434
+# Build RUN steps via chroot isolation, not the OCI runtime. On restricted VMs
+# (nested virt / limited cgroups) crun can't create the build container and
+# buildah dies with "did not get container create message from subprocess: EOF"
+# before pip even runs. chroot isolation sidesteps the runtime. Override if ever
+# needed: `make up BUILDAH_ISOLATION=oci`.
+export BUILDAH_ISOLATION ?= chroot
 DC = podman-compose --env-file .env
 
 # Deploy target: gcp (GKE), ocp (OpenShift), or podman (remote VM). Selects which
@@ -65,6 +71,7 @@ test: ## Run pure-logic self-checks (no DB/Ollama/Vertex) — same as CI
 	$(DC) build ui ingest
 	$(DC) run --rm --no-deps ui python -m advisor.retrieval
 	$(DC) run --rm --no-deps ui python -m advisor.nodes
+	$(DC) run --rm --no-deps ui python -m advisor.tsn
 	$(DC) run --rm --no-deps -e INGEST_SELFCHECK=1 ingest python ingest.py
 
 rag-eval: ## Evaluate dense, word/FTS, hybrid RRF, and diagnostic MMR recall
