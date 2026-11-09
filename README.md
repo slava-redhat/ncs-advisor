@@ -4,14 +4,15 @@ Version-aware RAG troubleshooting advisor for Nokia NCS. Ask about an issue on a
 specific NCS version (25.7, 25.11, …); it retrieves from that version's product
 docs **and** known solutions, and answers with inline citations. Built on
 **LangChain + LangGraph** (StateGraph, not a CrewAI/agent swarm), Postgres +
-pgvector, local Ollama embeddings, and corporate Claude on Vertex.
+pgvector, local Ollama embeddings, and GitHub Copilot by default (or Claude on
+Vertex when Vertex project settings are configured).
 
 ## Architecture
 
 ```
 Streamlit chat (in-process graph)
         │
-   LangGraph StateGraph  ── MemorySaver checkpointer (thread per session)
+   LangGraph StateGraph  ── PostgresSaver when enabled; otherwise MemorySaver
         │
    router ─┬─ ask_version (version missing → ask, end turn)
            └─ retrieve ─┬─ cve_lookup (security only, NVD) ─┐
@@ -84,8 +85,9 @@ CSV columns: `version, symptom, cause, resolution, ticket_id` (see
 ## Run
 
 ```bash
-cp .env.example .env            # set ANTHROPIC_VERTEX_PROJECT_ID
-cp ~/.config/gcloud/application_default_credentials.json ./.application_default_credentials.json
+cp .env.example .env
+# Export a valid Copilot SDK GitHub user token as COPILOT_GITHUB_TOKEN first.
+# Do not put the token in .env; see https://github.com/github/copilot-sdk/blob/main/docs/auth/authenticate.md
 # host Ollama must listen on all interfaces (see .env.example)
 make ingest                     # embed all versions on disk
 make up                         # UI at http://localhost:8501

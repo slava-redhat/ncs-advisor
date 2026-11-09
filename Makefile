@@ -69,6 +69,7 @@ reingest: ollama-check ## Force full rebuild: clear the corpus and re-embed ever
 
 test: ## Run pure-logic self-checks (no DB/Ollama/Vertex) — same as CI
 	$(DC) build ui ingest
+	$(DC) run --rm --no-deps ui python -m unittest discover -s tests
 	$(DC) run --rm --no-deps ui python -m advisor.retrieval
 	$(DC) run --rm --no-deps ui python -m advisor.nodes
 	$(DC) run --rm --no-deps ui python -m advisor.tsn

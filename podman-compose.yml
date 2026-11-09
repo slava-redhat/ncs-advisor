@@ -37,6 +37,8 @@ services:
     env_file: .env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /gcloud/application_default_credentials.json
+      COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:-}
+      COPILOT_CLI_EXTRACT_DIR: /tmp/github-copilot-sdk
     depends_on:
       db:
         condition: service_healthy
