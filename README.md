@@ -30,6 +30,12 @@ Streamlit chat (in-process graph)
 - **cve_lookup** — only for security questions; NVD REST 2.0 by CVE id or keyword.
 - **synthesize** — Claude answers from the retrieved sources only, with `[n]` citations.
 
+The chat accepts PNG/JPG images and PDFs. PDFs use embedded text when available and
+local Tesseract OCR for scanned pages; image OCR also runs locally. Uploaded images
+are additionally sent to the configured Copilot model for visual interpretation
+(use a vision-capable `NCS_COPILOT_MODEL` for diagrams and layouts). Each upload is
+limited to 10 MB, with up to three files and 20 pages per PDF.
+
 ## Retrieval evaluation
 
 The checked-in `ui/eval_golden_set.json` contains ten source-anchored queries

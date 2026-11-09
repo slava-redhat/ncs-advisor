@@ -10,8 +10,16 @@ import streamlit as st
 from langchain_core.messages import HumanMessage
 
 from advisor.graph import build_graph
+from advisor.llm import analyze_images_with_copilot
 from advisor.retrieval import available_versions
 from advisor.tsn import build_tsn_tarball, make_tsn_id
+from advisor.uploads import (
+    MAX_PDF_PAGES,
+    MAX_UPLOAD_COUNT,
+    MAX_UPLOAD_MB,
+    UploadProcessingError,
+    process_uploads,
+)
 
 st.set_page_config(page_title="NCS Advisor", page_icon=":material/support_agent:",
                    layout="centered")
@@ -42,8 +50,13 @@ graph = build_graph()
 
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
-    st.session_state.history = []      # [(role, text)]
-    st.session_state.pending = None    # list of question dicts awaiting answers
+st.session_state.setdefault("history", [])
+st.session_state.setdefault("pending", None)
+if st.session_state.history and isinstance(st.session_state.history[0], tuple):
+    st.session_state.history = [
+        {"role": role, "text": text, "attachments": []}
+        for role, text in st.session_state.history
+    ]
 
 CONFIG = {"configurable": {"thread_id": st.session_state.thread_id}}
 
@@ -79,6 +92,48 @@ def run_turn(user_text: str):
         answer = values["messages"][-1].content or streamed
         placeholder.markdown(answer)
     return answer, values.get("pending_questions") or None
+
+
+def render_history_entry(message):
+    role = message["role"]
+    with st.chat_message(role, avatar=ASSISTANT_AVATAR if role == "assistant" else USER_AVATAR):
+        st.markdown(message["text"])
+        for attachment in message.get("attachments", []):
+            filename = attachment["filename"]
+            st.caption(f":material/attach_file: {filename}")
+            with st.expander(f"Recognized text — {filename}"):
+                st.text(attachment["text"] or "No readable text detected.")
+        if message.get("image_analysis"):
+            with st.expander("Copilot visual analysis"):
+                st.markdown(message["image_analysis"])
+        if message.get("vision_error"):
+            st.warning(message["vision_error"], icon=":material/warning:")
+
+
+def advisor_prompt(message):
+    sections = [message["text"]]
+    for attachment in message.get("attachments", []):
+        extracted = attachment["text"] or "(No readable text detected.)"
+        sections.append(
+            f"Text extracted from {attachment['filename']}:\n{extracted}")
+    if message.get("image_analysis"):
+        sections.append(
+            "Copilot visual observations (not verified NCS product guidance):\n"
+            f"{message['image_analysis']}")
+    if message.get("vision_error"):
+        sections.append(
+            "Copilot visual analysis was unavailable. Do not infer image content; "
+            "use only the OCR text above.")
+    return "\n\n".join(sections)
+
+
+def export_message(message):
+    sections = [f"{message['role']}: {message['text']}"]
+    for attachment in message.get("attachments", []):
+        sections.append(f"Attachment {attachment['filename']} OCR:\n{attachment['text']}")
+    if message.get("image_analysis"):
+        sections.append(f"Copilot visual analysis:\n{message['image_analysis']}")
+    return "\n\n".join(sections)
 
 
 def render_form(questions):
@@ -131,16 +186,17 @@ with st.sidebar:
         st.rerun()
 
     # --- TSN export: only once the advisor has produced an answer the user can approve
-    has_answer = any(r == "assistant" for r, _ in st.session_state.history)
+    has_answer = any(m["role"] == "assistant" for m in st.session_state.history)
     if has_answer and not st.session_state.pending:
         st.divider()
         st.caption("Happy with the solution? Package it as a ready-to-run TSN.")
         if st.button("Ready to make TSN solution", icon=":material/deployed_code:",
                      width="stretch"):
             values = graph.get_state(CONFIG).values
-            solution = next((t for r, t in reversed(st.session_state.history)
-                             if r == "assistant"), "")
-            conversation = "\n\n".join(f"{r}: {t}" for r, t in st.session_state.history)
+            solution = next((m["text"] for m in reversed(st.session_state.history)
+                             if m["role"] == "assistant"), "")
+            conversation = "\n\n".join(
+                export_message(m) for m in st.session_state.history)
             tsn_id = make_tsn_id(values.get("version"), values.get("cve_ids") or [],
                                  values.get("issue_type") or "issue")
             with st.spinner("Building TSN bundle…"):
@@ -153,9 +209,8 @@ with st.sidebar:
                                icon=":material/download:", width="stretch")
 
 # --- render history ---------------------------------------------------------
-for role, text in st.session_state.history:
-    st.chat_message(role, avatar=ASSISTANT_AVATAR if role == "assistant" else USER_AVATAR
-                    ).markdown(text)
+for message in st.session_state.history:
+    render_history_entry(message)
 
 # --- pending choice form (takes priority over free text) --------------------
 if st.session_state.pending:
@@ -163,30 +218,82 @@ if st.session_state.pending:
         answer_text = render_form(st.session_state.pending)
     if answer_text:
         st.session_state.pending = None
-        st.session_state.history.append(("user", answer_text))
+        st.session_state.history.append({
+            "role": "user", "text": answer_text, "attachments": []})
         answer, pending = run_turn(answer_text)
-        st.session_state.history.append(("assistant", answer))
+        st.session_state.history.append({"role": "assistant", "text": answer})
         st.session_state.pending = pending
         st.rerun()
 
 # --- input: suggestion chips (empty chat) + free text -----------------------
-prompt = None
+submission = None
 if not st.session_state.history and not st.session_state.pending:
     pick = st.pills("Try asking", list(SUGGESTIONS), label_visibility="collapsed")
     if pick:
-        prompt = SUGGESTIONS[pick]
+        submission = (SUGGESTIONS[pick], [])
 
 # ponytail: hide free-text input while a choice form is pending
 if not st.session_state.pending:
-    typed = st.chat_input("Describe your NCS issue (mention your version, e.g. 25.7)…",
-                          submit_mode="disable")
-    if typed:
-        prompt = typed
+    st.caption(
+        "Attach a screenshot of the error or diagram, or the relevant PDF pages. "
+        "Include the NCS version, affected node or role, expected vs. actual result, "
+        "and exact error. "
+        f"Up to {MAX_UPLOAD_COUNT} PNG/JPG/PDF files ({MAX_UPLOAD_MB} MB each; "
+        f"PDFs up to {MAX_PDF_PAGES} pages). "
+        "Redact secrets: extracted text is sent to the configured AI provider, "
+        "and image uploads are sent to Copilot for visual analysis.")
+    typed = st.chat_input(
+        "Describe the issue or attach relevant evidence…",
+        accept_file="multiple",
+        file_type=["png", "jpg", "jpeg", "pdf"],
+        max_upload_size=MAX_UPLOAD_MB,
+        submit_mode="disable",
+    )
+    if typed is not None:
+        text = typed.text if hasattr(typed, "text") else typed
+        files = typed.files if hasattr(typed, "files") else []
+        if text or files:
+            submission = (text, files)
 
-if prompt:
-    st.session_state.history.append(("user", prompt))
-    st.chat_message("user", avatar=USER_AVATAR).markdown(prompt)
-    answer, pending = run_turn(prompt)
-    st.session_state.history.append(("assistant", answer))
+if submission:
+    text, files = submission
+    prompt = text.strip() or "Please read and interpret the attached file(s)."
+    with st.status("Reading attachments…", expanded=False) as upload_status:
+        try:
+            uploads = process_uploads([(file.name, file.getvalue()) for file in files])
+        except UploadProcessingError as exc:
+            st.error(f"Could not process upload: {exc}", icon=":material/error:")
+            st.stop()
+
+        image_inputs = [
+            upload.image_attachment for upload in uploads if upload.image_attachment
+        ]
+        image_analysis = None
+        vision_error = None
+        if image_inputs:
+            upload_status.update(label="Analyzing images with Copilot…")
+            try:
+                image_analysis = analyze_images_with_copilot(prompt, image_inputs)
+            except (RuntimeError, OSError, ValueError) as exc:
+                vision_error = (
+                    f"Copilot visual analysis is unavailable ({type(exc).__name__}); "
+                    "local OCR text will still be used. Choose a vision-capable "
+                    "NCS_COPILOT_MODEL or retry if diagrams matter.")
+        upload_status.update(label="Attachments ready", state="complete")
+
+    entry = {
+        "role": "user",
+        "text": prompt,
+        "attachments": [
+            {"filename": upload.filename, "text": upload.text} for upload in uploads
+        ],
+        "image_analysis": image_analysis,
+        "vision_error": vision_error,
+    }
+    st.session_state.history.append(entry)
+    render_history_entry(entry)
+
+    answer, pending = run_turn(advisor_prompt(entry))
+    st.session_state.history.append({"role": "assistant", "text": answer})
     st.session_state.pending = pending
     st.rerun()

@@ -9,6 +9,7 @@ sampling knobs don't raise TypeError.
 When Vertex project configuration is absent, Copilot is selected automatically.
 """
 import asyncio
+import base64
 import inspect
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -63,7 +64,9 @@ def _format_messages(messages: Sequence[BaseMessage]) -> str:
     )
 
 
-async def _copilot_complete(prompt: str, model: str) -> str:
+async def _copilot_complete(
+    prompt: str, model: str, attachments: list[dict[str, str]] | None = None,
+) -> str:
     from copilot import CopilotClient
     from copilot.session_events import AssistantMessageData
 
@@ -77,7 +80,7 @@ async def _copilot_complete(prompt: str, model: str) -> str:
             available_tools=[],
             streaming=False,
         ) as session:
-            response = await session.send_and_wait(prompt)
+            response = await session.send_and_wait(prompt, attachments=attachments)
 
     if response is None or not isinstance(response.data, AssistantMessageData):
         raise RuntimeError("Copilot returned no assistant response")
@@ -86,13 +89,56 @@ async def _copilot_complete(prompt: str, model: str) -> str:
     return response.data.content
 
 
-def _copilot_complete_sync(prompt: str, model: str) -> str:
+def _copilot_complete_sync(
+    prompt: str, model: str, attachments: list[dict[str, str]] | None = None,
+) -> str:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(_copilot_complete(prompt, model))
+        return asyncio.run(_copilot_complete(prompt, model, attachments))
     with ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(asyncio.run, _copilot_complete(prompt, model)).result()
+        return executor.submit(
+            asyncio.run, _copilot_complete(prompt, model, attachments)
+        ).result()
+
+
+def analyze_images_with_copilot(
+    question: str, images: Sequence[tuple[str, str, bytes]],
+) -> str:
+    """Ask Copilot Vision for observations about the uploaded images."""
+    if _selected_provider() != "copilot":
+        raise RuntimeError("Image analysis requires NCS_LLM_PROVIDER=copilot")
+    if not os.environ.get("COPILOT_GITHUB_TOKEN"):
+        raise RuntimeError(
+            "Copilot image analysis requires COPILOT_GITHUB_TOKEN in the UI container")
+    if not images:
+        raise ValueError("At least one image is required")
+
+    attachments = [
+        {
+            "type": "blob",
+            "data": base64.b64encode(data).decode("ascii"),
+            "mimeType": mime_type,
+            "displayName": filename,
+        }
+        for filename, mime_type, data in images
+    ]
+    prompt = (
+        "Analyze the attached image(s) for this NCS support question: "
+        f"{question}\n\n"
+        "For screenshots, transcribe relevant visible text. For diagrams, describe "
+        "the visible components and relationships. Separate direct observations from "
+        "interpretation, and say when details are illegible. Do not invent NCS product "
+        "facts or troubleshooting guidance. Keep the report concise."
+    )
+    from copilot._jsonrpc import JsonRpcError, ProcessExitedError
+
+    try:
+        return _copilot_complete_sync(
+            prompt, os.environ.get("NCS_COPILOT_MODEL", "auto"), attachments)
+    except (JsonRpcError, ProcessExitedError) as exc:
+        raise RuntimeError(
+            f"Copilot image analysis failed ({type(exc).__name__})") from exc
 
 
 class _CopilotChat(BaseChatModel):

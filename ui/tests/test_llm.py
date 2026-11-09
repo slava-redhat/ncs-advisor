@@ -4,12 +4,14 @@ from tempfile import NamedTemporaryFile
 import unittest
 from unittest.mock import patch
 
+from copilot._jsonrpc import JsonRpcError
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from advisor.llm import (
     _CopilotChat,
     _format_messages,
     _selected_provider,
+    analyze_images_with_copilot,
     get_llm,
 )
 from advisor.models import RouterDecision
@@ -75,6 +77,36 @@ class CopilotChatTests(unittest.TestCase):
             ])
         self.assertIsInstance(result, RouterDecision)
         self.assertEqual(result.symptoms, "pod crash")
+
+    def test_image_analysis_sends_blob_attachments_to_copilot(self):
+        with patch.dict(os.environ, {"COPILOT_GITHUB_TOKEN": "test-token"}, clear=True):
+            with patch("advisor.llm._copilot_complete_sync",
+                       return_value="A node screenshot") as complete:
+                result = analyze_images_with_copilot(
+                    "What is shown?",
+                    [("screen.png", "image/png", b"image bytes")],
+                )
+
+        self.assertEqual(result, "A node screenshot")
+        prompt, model, attachments = complete.call_args.args
+        self.assertIn("What is shown?", prompt)
+        self.assertEqual(model, "auto")
+        self.assertEqual(attachments, [{
+            "type": "blob",
+            "data": "aW1hZ2UgYnl0ZXM=",
+            "mimeType": "image/png",
+            "displayName": "screen.png",
+        }])
+
+    def test_image_analysis_surfaces_copilot_rpc_failure(self):
+        with patch.dict(os.environ, {"COPILOT_GITHUB_TOKEN": "test-token"}, clear=True):
+            with patch("advisor.llm._copilot_complete_sync",
+                       side_effect=JsonRpcError(-32000, "vision unavailable")):
+                with self.assertRaisesRegex(RuntimeError, "Copilot image analysis failed"):
+                    analyze_images_with_copilot(
+                        "What is shown?",
+                        [("screen.png", "image/png", b"image bytes")],
+                    )
 
 
 if __name__ == "__main__":
